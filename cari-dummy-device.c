@@ -142,13 +142,13 @@ void dbg_print(const char* color_code, const char* fmt, ...)
 
 	if(color_code!=NULL)
 	{
-		printf(color_code);
-		printf(str);
-		printf(TERM_DEFAULT);
+		fputs(color_code, stdout);
+		fputs(str, stdout);
+		fputs(TERM_DEFAULT, stdout);
 	}
 	else
 	{
-		printf(str);
+		fputs(str, stdout);
 	}
 }
 
@@ -210,7 +210,8 @@ void dispSettings(device_t *dev, cari_t *cari)
     for(uint8_t i=0; i<num_devices; i++)
     {
         dbg_print(TERM_DEFAULT, "| Subdevice ");
-        dbg_print(TERM_YELLOW, "%d                          |", i);
+        dbg_print(TERM_YELLOW, "%d", i);
+        dbg_print(TERM_DEFAULT, "                          |");
 
     }
     printf("\n");
@@ -238,7 +239,7 @@ void dispSettings(device_t *dev, cari_t *cari)
     for(uint8_t i=0; i<num_devices; i++)
     {
         char line[100]; memset(line, 0, 100);
-        sprintf(line, "| Frequency: %llu Hz", dev->subdevice[i].frequency);
+        sprintf(line, "| Frequency: %lu Hz", dev->subdevice[i].frequency);
         for(uint8_t j=strlen(line); j<39; j++)
             line[j]=' ';
         sprintf(&line[strlen(line)], "|");
