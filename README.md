@@ -1,7 +1,7 @@
 # cari-dummy-device
 CARI dummy device. Can be used to test CARI implementations. Supports [CARI 1.3](https://github.com/M17-Project/CARI/blob/main/docs/commands.md).
 
-![image](https://github.com/user-attachments/assets/e330ad32-b614-4e39-a707-6724f88d49e8)
+![obraz](https://github.com/user-attachments/assets/bdaa1e43-7f94-4fe4-b2f1-b77ac08fbc3c)
 
 ## Building
 Run `make` in the main directory.
