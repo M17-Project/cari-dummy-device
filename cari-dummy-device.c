@@ -14,9 +14,12 @@
 
 #include "term.h" //colored terminal font
 
+#define MAX_REP_LEN         1024
 #define DBG_HALT            while(1);
 #define CARI_VER            (((uint8_t)1<<4) | 3)   //CARI v1.3
 #define CARI_DEV_IDENT      "CARI dummy device, Woj SP5WWP"
+
+uint8_t zmq_rep[1024];
 
 typedef enum
 {
@@ -96,7 +99,7 @@ typedef struct
 } cari_t;
 
 //default settings
-cari_t cari =
+cari_t cari_cfg =
 {
     .ul_port = 17000,
     .dl_port = 17001,
@@ -146,7 +149,7 @@ void dbg_print(const char* color_code, const char* fmt, ...)
 	va_list ap;
 
 	va_start(ap, fmt);
-	vsprintf(str, fmt, ap);
+	vsnprintf(str, sizeof(str), fmt, ap);
 	va_end(ap);
 
 	if(color_code!=NULL)
@@ -212,7 +215,7 @@ void cari_init(cari_t *cari)
     }   
 }
 
-void dispSettings(device_t *dev, cari_t *cari)
+void dispSettings(const device_t *dev, const cari_t *cari)
 {
     dbg_print(TERM_CLR, "");
 
@@ -300,7 +303,7 @@ void dispSettings(device_t *dev, cari_t *cari)
     for(uint8_t i=0; i<num_devices; i++)
     {
         char line[100] = {0};
-        sprintf(line, "| RX frequency: %lu Hz", dev->subdevice[i].rx_frequency);
+        sprintf(line, "| RX frequency: %llu Hz", dev->subdevice[i].rx_frequency);
         for(uint8_t j=strlen(line); j<39; j++)
             line[j]=' ';
         sprintf(&line[strlen(line)], "|");
@@ -312,7 +315,7 @@ void dispSettings(device_t *dev, cari_t *cari)
     for(uint8_t i=0; i<num_devices; i++)
     {
         char line[100] = {0};
-        sprintf(line, "| TX frequency: %lu Hz", dev->subdevice[i].tx_frequency);
+        sprintf(line, "| TX frequency: %llu Hz", dev->subdevice[i].tx_frequency);
         for(uint8_t j=strlen(line); j<39; j++)
             line[j]=' ';
         sprintf(&line[strlen(line)], "|");
@@ -391,90 +394,91 @@ void dispSettings(device_t *dev, cari_t *cari)
 
 void cari_pong(void *cari_ctrl, uint32_t err)
 {
-    uint8_t rep[7];
+    zmq_rep[0]=CMD_PING;
+    zmq_rep[1]=7;
+    zmq_rep[2]=0;
+    zmq_rep[3]=(err>>24)&0xFF;
+    zmq_rep[4]=(err>>16)&0xFF;
+    zmq_rep[5]=(err>>8)&0xFF;
+    zmq_rep[6]=(err>>0)&0xFF;
 
-    rep[0]=CMD_PING;
-    *((uint16_t*)&rep[1])=7;
-    *((uint32_t*)&rep[3])=err;
-
-    zmq_send(cari_ctrl, rep, 7, ZMQ_DONTWAIT);
+    zmq_send(cari_ctrl, zmq_rep, 7, ZMQ_DONTWAIT);
 }
 
 //the len parameter is the total length
-void cari_reply_addr(void *cari_ctrl, cid_t cid, uint8_t addr, uint8_t *params, uint8_t len)
+void cari_reply_addr(void *cari_ctrl, cid_t cid, uint8_t addr, const uint8_t *params, size_t len)
 {
-    uint8_t rep[len];
+    zmq_rep[0]=cid;
+    zmq_rep[1]=(len>>8)&0xFF;
+    zmq_rep[2]=len&0xFF;
+    zmq_rep[3]=addr;
+    memcpy(&zmq_rep[4], params, len-4);
 
-    rep[0]=cid;
-    *((uint16_t*)&rep[1])=len;
-    rep[3]=addr;
-    memcpy(&rep[4], params, len-4);
-
-    zmq_send(cari_ctrl, rep, len, ZMQ_DONTWAIT);    
+    zmq_send(cari_ctrl, zmq_rep, len, ZMQ_DONTWAIT);    
 }
 
 //the len parameter is the total length
-void cari_reply_noaddr(void *cari_ctrl, cid_t cid, uint8_t *params, uint8_t len)
+void cari_reply_noaddr(void *cari_ctrl, cid_t cid, const uint8_t *params, size_t len)
 {
-    uint8_t rep[len+3];
+    zmq_rep[0]=cid;
+    zmq_rep[1]=((len+3)>>8)&0xFF;
+    zmq_rep[2]=(len+3)&0xFF;
+    memcpy(&zmq_rep[3], params, len);
 
-    rep[0]=cid;
-    *((uint16_t*)&rep[1])=len+3;
-    memcpy(&rep[3], params, len);
-
-    zmq_send(cari_ctrl, rep, len+3, ZMQ_DONTWAIT);    
+    zmq_send(cari_ctrl, zmq_rep, len+3, ZMQ_DONTWAIT);    
 }
 
 int main(void)
 {
-    cari_init(&cari);
-
-    dispSettings(&device, &cari);
+    cari_init(&cari_cfg);
+    dispSettings(&device, &cari_cfg);
 
     while(1)
     {
         //simple ACK echo for the CTRL plane
-        cari.zmq_byte_cnt = zmq_recv(cari.zmq_ctrl, cari.zmq_buff, sizeof(cari.zmq_buff), ZMQ_DONTWAIT);
+        cari_cfg.zmq_byte_cnt = zmq_recv(cari_cfg.zmq_ctrl, cari_cfg.zmq_buff, sizeof(cari_cfg.zmq_buff), 0);
 
-        if(cari.zmq_byte_cnt>0 && cari.zmq_byte_cnt==*((uint16_t*)&cari.zmq_buff[1]))
+        uint16_t len = cari_cfg.zmq_buff[1] | (cari_cfg.zmq_buff[2] << 8);
+
+        if (cari_cfg.zmq_byte_cnt > 0 && cari_cfg.zmq_byte_cnt == len)
         {
-            uint8_t cid = cari.zmq_buff[0];
+            uint8_t cid = cari_cfg.zmq_buff[0];
 
             if(cid==CMD_PING) //PING
             {
-                cari_pong(cari.zmq_ctrl, 0);
+                cari_pong(cari_cfg.zmq_ctrl, 0);
             }
 
             else if(cid==CMD_DEV_SET_REG)
             {
                 uint8_t resp = CARI_OK;
-                cari_reply_noaddr(cari.zmq_ctrl, cid, &resp, 1);
+                cari_reply_noaddr(cari_cfg.zmq_ctrl, cid, &resp, 1);
             }
 
             else if(cid==CMD_DEV_GET_IDENT)
             {
-                cari_reply_noaddr(cari.zmq_ctrl, cid, (uint8_t*)device.ident, strlen(device.ident));
+                cari_reply_noaddr(cari_cfg.zmq_ctrl, cid, (uint8_t*)device.ident, strlen(device.ident));
             }
 
             else if(cid==CMD_DEV_GET_REG)
             {
-                uint8_t addr = cari.zmq_buff[3];
+                uint8_t addr = cari_cfg.zmq_buff[3];
                 uint8_t resp;
 
                 if(addr==0)
                 {
                     resp = CARI_VER;
-                    cari_reply_noaddr(cari.zmq_ctrl, cid, &resp, 1);
+                    cari_reply_noaddr(cari_cfg.zmq_ctrl, cid, &resp, 1);
                 }
             }
 
             else //unrecognized command
             {
                 uint8_t err = CARI_UNSUPPORTED;
-                cari_reply_noaddr(cari.zmq_ctrl, cid, &err, 1);
+                cari_reply_noaddr(cari_cfg.zmq_ctrl, cid, &err, 1);
             }
 
-            dispSettings(&device, &cari);
+            dispSettings(&device, &cari_cfg);
         }
     }
 
