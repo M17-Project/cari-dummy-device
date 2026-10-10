@@ -1,0 +1,3 @@
+[submodule "libcari"]
+	path = libcari
+	url = https://github.com/M17-Project/libcari
