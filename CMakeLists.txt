@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cari-dummy-device VERSION 2.0.0 LANGUAGES C)
+project(cari-dummy-device VERSION 2.1.0 LANGUAGES C)
 
 # CARI 2.1 slave emulating the M17 SX1255 RRU, built on libcari.
 #
